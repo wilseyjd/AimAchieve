@@ -1,0 +1,5 @@
+{
+  "name": "On-track: My Goals Tracker",
+  "description": "A personal goal tracking application implementing the Objectives and Key Results framework for personal goals with flexible action planning, calendar visualization, and reminders to keep you on track.",
+  "requestFramePermissions": []
+}
