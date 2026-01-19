@@ -31,6 +31,7 @@ export interface KeyResult {
   targetValue: number;
   unit: string;
   dueDate?: string;
+  status?: 'active' | 'archived';
 }
 
 export interface Objective {
