@@ -19,7 +19,7 @@ export interface Action {
   daysOfWeek?: number[]; // 0-6 for weekly (0 = Sunday) used if weeklyType is 'specific_days'
   timesPerWeek?: number; // used if weeklyType is 'times_per_week'
   // One-off
-  targetDate?: string; 
+  targetDate?: string;
   startDate?: string; // When this action schedule becomes effective
   createdDate: string;
 }
@@ -57,9 +57,12 @@ export interface User {
   name: string;
   email: string;
   // Security fields (Optional to support legacy/mock data if needed, but enforced in new logic)
-  passwordHash?: string; 
+  passwordHash?: string;
   salt?: string;
   preferences?: UserPreferences;
+  // Recovery
+  securityQuestion?: string;
+  securityAnswerHash?: string;
 }
 
 export interface AppState {
