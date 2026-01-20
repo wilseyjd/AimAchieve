@@ -21,6 +21,7 @@ export interface Action {
   // One-off
   targetDate?: string;
   startDate?: string; // When this action schedule becomes effective
+  endDate?: string; // When this action schedule ends
   createdDate: string;
 }
 
@@ -73,7 +74,7 @@ export interface AppState {
   user: User | null;
 }
 
-export type ViewMode = 'dashboard' | 'calendar' | 'goals' | 'analytics' | 'profile';
+export type ViewMode = 'dashboard' | 'calendar' | 'goals' | 'analytics' | 'profile' | 'terms' | 'privacy';
 export type CalendarViewMode = 'month' | 'week' | 'day';
 
 // AI Types

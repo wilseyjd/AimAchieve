@@ -23,4 +23,11 @@ export const MOCK_INITIAL_DATA: {
   logs: []
 };
 
+
+export const CREATION_LIMITS = {
+  MAX_GOALS: 5,
+  MAX_KEY_RESULTS_PER_GOAL: 8,
+  MAX_ACTIONS_PER_KEY_RESULT: 8
+};
+
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

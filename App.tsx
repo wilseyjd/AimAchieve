@@ -23,18 +23,20 @@ import {
   LayoutList,
   LayoutGrid,
   Filter,
+  Info,
   ExternalLink,
   Lock,
   Eye,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  Link
 } from 'lucide-react';
 import { format, startOfWeek, addDays, startOfMonth, endOfMonth, endOfWeek, isSameMonth, isSameDay, isToday, parseISO, addMonths, subMonths, getDay, isWithinInterval, isBefore, startOfToday, subDays, eachDayOfInterval, eachWeekOfInterval, subWeeks } from 'date-fns';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LineChart, Line, CartesianGrid } from 'recharts';
 
 // Imports from local files
 import { AppState, ViewMode, CalendarViewMode, Objective, KeyResult, Action, ActionLog, User, UserPreferences, Frequency } from './types';
-import { MOCK_INITIAL_DATA, COLORS, WEEKDAYS } from './constants';
+import { MOCK_INITIAL_DATA, COLORS, CREATION_LIMITS, WEEKDAYS } from './constants';
 import { loadState, generateId, logoutUser, authenticateUser, registerUser, changePassword, getSecurityQuestion, sendPasswordResetEmail, createObjective, updateObjective, deleteObjective, createKeyResult, updateKeyResult, deleteKeyResult, createAction, updateAction, deleteAction, upsertActionLog } from './services/storageService';
 import { generateOKRFromGoal } from './services/geminiService';
 import { Button } from './components/ui/Button';
@@ -161,11 +163,14 @@ export default function App() {
     securityAnswer: '',
     newPassword: ''
   });
-  const [resetFlowState, setResetFlowState] = useState<{ step: 'email' | 'verify' }>({ step: 'email' });
+  const [resetFlowState, setResetFlowState] = useState<{ step: 'email' | 'verify' | 'reset', email?: string }>({ step: 'email' });
   const [retrievedQuestion, setRetrievedQuestion] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  // --- PERSISTENCE ---
 
   // Load data on mount
   useEffect(() => {
@@ -193,6 +198,7 @@ export default function App() {
         // Basic Validation
         if (!authForm.name) throw new Error("Name is required");
         if (authForm.password.length < 6) throw new Error("Password must be at least 6 characters");
+        if (!termsAccepted) throw new Error("You must agree to the Terms of Use and confirm you are 13+.");
 
         await registerUser(authForm.name, authForm.email, authForm.password, authForm.securityQuestion, authForm.securityAnswer);
         const data = await loadState();
@@ -209,6 +215,7 @@ export default function App() {
       // Reset Form only if not in middle of reset flow
       if (authMode === 'login' || authMode === 'signup') {
         setAuthForm({ name: '', email: '', password: '', securityQuestion: 'What was the name of your first pet?', securityAnswer: '', newPassword: '' });
+        setTermsAccepted(false);
       }
     } catch (err: any) {
       setAuthError(err.message || "Authentication failed");
@@ -226,6 +233,7 @@ export default function App() {
     setAuthForm({ name: '', email: '', password: '', securityQuestion: 'What was the name of your first pet?', securityAnswer: '', newPassword: '' });
     setAuthError(null);
     setAuthMode('login');
+    setTermsAccepted(false);
     setResetFlowState({ step: 'email' });
     setRetrievedQuestion(null);
   };
@@ -285,9 +293,12 @@ export default function App() {
             </div>
           </div>
           <h2 className="text-center text-3xl font-bold tracking-tight text-stone-900">AimAchieve</h2>
+          <br className="text-center text-sm"></br>
+          <h3 className="text-center text-xl tracking-tight text-stone-900">Use <b>OKRs</b> to set and achieve your goals</h3>
+          <p className="text-center text-xl tracking-tight text-stone-900">Why <b>OKRs</b>? Learn more <a className="text-blue-500 hover:underline hover:text-blue-600" target="_blank" href="https://www.whatmatters.com/faqs/okr-meaning-definition-example">here</a></p>
           <p className="mt-2 text-center text-sm text-stone-500">
-            {authMode === 'login' && 'Sign in to continue tracking.'}
-            {authMode === 'signup' && 'Create your secure account.'}
+            {authMode === 'login' && 'Sign in to continue achieving your goals.'}
+            {authMode === 'signup' && 'Create your account to begin achieving your goals.'}
             {authMode === 'forgot-password' && 'Recover your account.'}
           </p>
         </div>
@@ -419,6 +430,28 @@ export default function App() {
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Terms & Age Checkbox - Signup Only */}
+              {authMode === 'signup' && (
+                <div className="flex items-start">
+                  <div className="flex items-center h-5">
+                    <input
+                      id="terms"
+                      name="terms"
+                      type="checkbox"
+                      required
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
+                      className="focus:ring-stone-500 h-4 w-4 text-stone-900 border-stone-300 rounded"
+                    />
+                  </div>
+                  <div className="ml-3 text-sm">
+                    <label htmlFor="terms" className="font-medium text-stone-700">
+                      I agree to the Terms of Use and confirm I am 13 years or older.
+                    </label>
                   </div>
                 </div>
               )}
@@ -579,6 +612,12 @@ export default function App() {
         {currentView === 'calendar' && <CalendarPage state={state} onToggleAction={toggleAction} />}
         {currentView === 'analytics' && <AnalyticsPage state={state} />}
         {currentView === 'profile' && <ProfilePage state={state} setState={setState} />}
+        {currentView === 'terms' && <TermsPage />}
+        {currentView === 'privacy' && <PrivacyPage />}
+
+        {(currentView === 'dashboard' || currentView === 'goals' || currentView === 'calendar' || currentView === 'analytics' || currentView === 'profile' || currentView === 'terms' || currentView === 'privacy') && (
+          <Footer onViewChange={setCurrentView} />
+        )}
       </main>
     </div>
   );
@@ -637,7 +676,7 @@ function Dashboard({ state, onToggleAction, onViewChange }: { state: AppState, o
     <div className="p-4 md:p-8 lg:p-12 max-w-7xl mx-auto w-full">
       <header className="mb-8 md:mb-12 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold text-stone-900 tracking-tighter mb-2">Good Morning, {state.user?.name.split(' ')[0]}</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-stone-900 tracking-tighter mb-2">Hello {state.user?.name.split(' ')[0]}!</h1>
           <p className="text-stone-500 text-base md:text-lg">Focus for {format(new Date(), 'EEEE, MMMM do')}</p>
         </div>
         <div className="text-left md:text-right bg-white md:bg-transparent p-3 md:p-0 rounded-lg md:rounded-none border md:border-none border-stone-100 shadow-sm md:shadow-none w-full md:w-auto">
@@ -690,9 +729,7 @@ function Dashboard({ state, onToggleAction, onViewChange }: { state: AppState, o
               </div>
             ))}
           </div>
-          <Button variant="outline" className="w-full mt-6 justify-between group">
-            Create New <Plus className="w-4 h-4 text-stone-400 group-hover:text-stone-900" />
-          </Button>
+
         </div>
       </div>
 
@@ -773,6 +810,10 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
   // --- Handlers for opening modals ---
 
   const openAddGoal = () => {
+    if (state.objectives.length >= CREATION_LIMITS.MAX_GOALS) {
+      alert(`You can only have up to ${CREATION_LIMITS.MAX_GOALS} Goals.`);
+      return;
+    }
     setFormData({ title: '', targetDate: '', description: '' });
     setModalType('create-goal');
   };
@@ -784,6 +825,11 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
   };
 
   const openAddKeyResult = (objId: string) => {
+    const currentKRs = state.keyResults.filter(k => k.objectiveId === objId).length;
+    if (currentKRs >= CREATION_LIMITS.MAX_KEY_RESULTS_PER_GOAL) {
+      alert(`You can only have up to ${CREATION_LIMITS.MAX_KEY_RESULTS_PER_GOAL} Key Results per Goal.`);
+      return;
+    }
     setSelectedObjectiveId(objId);
     setFormData({ title: '', targetValue: '', unit: '', currentValue: 0, dueDate: '' });
     setModalType('add-kr');
@@ -796,7 +842,18 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
   };
 
   const openAddAction = (krId: string) => {
+    const currentActions = state.actions.filter(a => a.keyResultId === krId).length;
+    if (currentActions >= CREATION_LIMITS.MAX_ACTIONS_PER_KEY_RESULT) {
+      alert(`You can only have up to ${CREATION_LIMITS.MAX_ACTIONS_PER_KEY_RESULT} Actions per Key Result.`);
+      return;
+    }
     setSelectedKeyResultId(krId);
+
+    // Calculate default end date
+    const kr = state.keyResults.find(k => k.id === krId);
+    const obj = state.objectives.find(o => o.id === kr?.objectiveId);
+    const defaultEndDate = kr?.dueDate || obj?.targetDate || format(addDays(new Date(), 30), 'yyyy-MM-dd');
+
     setFormData({
       title: '',
       frequency: 'daily',
@@ -804,7 +861,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       daysOfWeek: [],
       timesPerWeek: 3,
       targetDate: '',
-      startDate: format(new Date(), 'yyyy-MM-dd') // Default to today
+      startDate: format(new Date(), 'yyyy-MM-dd'), // Default to today
+      endDate: defaultEndDate
     });
     setModalType('add-action');
   };
@@ -818,7 +876,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       daysOfWeek: action.daysOfWeek || [],
       timesPerWeek: action.timesPerWeek || 3,
       targetDate: action.targetDate || '',
-      startDate: action.startDate || action.createdDate
+      startDate: action.startDate || action.createdDate,
+      endDate: action.endDate || ''
     });
     setModalType('edit-action');
   };
@@ -926,7 +985,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       daysOfWeek: (formData.frequency === 'weekly' && formData.weeklyType === 'specific_days') ? formData.daysOfWeek : undefined,
       timesPerWeek: (formData.frequency === 'weekly' && formData.weeklyType === 'times_per_week') ? Number(formData.timesPerWeek) : undefined,
       targetDate: formData.frequency === 'one-off' ? formData.targetDate : undefined,
-      startDate: formData.startDate || format(new Date(), 'yyyy-MM-dd')
+      startDate: formData.startDate || format(new Date(), 'yyyy-MM-dd'),
+      endDate: formData.endDate
     });
 
     if (modalType === 'edit-action' && editingItem) {
@@ -1130,10 +1190,20 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
         <div className="space-y-6">
           {modalType === 'create-goal' && (
             <div className="bg-stone-50 p-6 rounded-xl border border-stone-100">
-              <label className="block text-sm font-bold text-stone-900 mb-3 flex items-center">
-                <Sparkles className="w-4 h-4 mr-2 text-stone-900" />
-                AI Architect
-              </label>
+              <div className="mb-3 flex items-center relative group w-fit">
+                <label className="block text-sm font-bold text-stone-900 flex items-center cursor-help">
+                  <Sparkles className="w-4 h-4 mr-2 text-stone-900" />
+                  AI Goal Generator
+                  <Info className="w-4 h-4 ml-2 text-stone-400" />
+                </label>
+                {/* Tooltip */}
+                <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-64 p-3 bg-stone-900 text-white text-xs rounded-lg shadow-xl z-50 pointer-events-none">
+                  AI generated goals and plans are for inspiration and should be reviewed and updated to meet your specific needs
+                  {/* Arrow */}
+                  <div className="absolute left-10 top-full w-2 h-2 bg-stone-900 rotate-45 transform -translate-y-1"></div>
+                </div>
+              </div>
+
               <div className="flex gap-3">
                 <input
                   type="text"
@@ -1297,16 +1367,30 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
 
           {/* Start Date Configuration - Available for all frequencies except one-off (which has targetDate) */}
           {formData.frequency !== 'one-off' && (
-            <div>
-              <label className="block text-sm font-medium text-stone-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={formData.startDate || ''}
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border"
-              />
-              <p className="text-xs text-stone-400 mt-1">Action will appear in schedule from this date.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  value={formData.startDate || ''}
+                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                  className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">End Date</label>
+                <input
+                  type="date"
+                  min={format(new Date(), 'yyyy-MM-dd')}
+                  value={formData.endDate || ''}
+                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                  className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border"
+                />
+              </div>
             </div>
+          )}
+          {formData.frequency !== 'one-off' && (
+            <p className="text-xs text-stone-400 -mt-3 mb-2">Action will appear in schedule between these dates.</p>
           )}
 
           {formData.frequency === 'weekly' && (
@@ -1539,6 +1623,8 @@ function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleActi
 
           // Filter by start date
           if (a.startDate && dayStr < a.startDate) return false;
+          // Filter by end date
+          if (a.endDate && dayStr > a.endDate) return false;
 
           if (a.frequency === 'daily') return true;
           if (a.frequency === 'weekly') {
@@ -2045,7 +2131,7 @@ function AnalyticsPage({ state }: { state: AppState }) {
 
         {/* Completion Ratio */}
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100">
-          <h3 className="text-lg font-bold text-stone-900 mb-1">Reliability Score</h3>
+          <h3 className="text-lg font-bold text-stone-900 mb-1">Consistency Score</h3>
           <p className="text-xs text-stone-400 mb-6">Based on fixed schedule actions (last 30 days)</p>
           <div className="h-64 flex justify-center items-center">
             <ResponsiveContainer width="100%" height="100%">
@@ -2074,7 +2160,7 @@ function AnalyticsPage({ state }: { state: AppState }) {
 
         {/* Objective Trajectory */}
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100">
-          <h3 className="text-lg font-bold text-stone-900 mb-1">Progress Trajectory</h3>
+          <h3 className="text-lg font-bold text-stone-900 mb-1">Goal Progress</h3>
           <p className="text-xs text-stone-400 mb-6">Average completion of active Key Results</p>
           <div className="h-64">
             {objTrajectoryData.length > 0 ? (
@@ -2332,12 +2418,7 @@ function ProfilePage({ state, setState }: { state: AppState, setState: React.Dis
               </div>
             </div>
 
-            <Toggle
-              label="Daily Digest"
-              description="Receive a morning summary of tasks."
-              checked={user.preferences?.dailyDigest ?? true}
-              onChange={(val: boolean) => handleUpdatePreferences('dailyDigest', val)}
-            />
+
           </div>
         </div>
       </div>
@@ -2355,5 +2436,143 @@ function ProfilePage({ state, setState }: { state: AppState, setState: React.Dis
         </div>
       </div>
     </div>
+  );
+}
+
+function TermsPage() {
+  return (
+    <div className="p-4 md:p-8 lg:p-12 max-w-4xl mx-auto w-full bg-white rounded-2xl shadow-sm border border-stone-100 my-8">
+      <h1 className="text-3xl font-bold text-stone-900 mb-6">Terms of Use</h1>
+      <div className="prose prose-stone max-w-none text-stone-600 space-y-6">
+        <p><strong>Last updated:</strong> {format(new Date(), 'MMMM d, yyyy')}</p>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">1. Overview</h2>
+          <p>This website and application (the "Service") is provided for <strong>personal, non-commercial use</strong>. The Service allows users to create and track goals using an OKR-style framework and may offer AI-generated suggestions. By using the Service, you agree to these Terms.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">2. Informational Use Only</h2>
+          <p>The Service is provided <strong>for informational and reference purposes only</strong>. The Service does not provide professional, financial, business, or personal advice. Any decisions you make based on information from the Service are made at your own discretion and risk.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">3. AI-Generated Content</h2>
+          <p>The Service may generate goal or OKR suggestions using artificial intelligence based on user input.</p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li>AI-generated content is <strong>not guaranteed to be accurate, complete, or up to date</strong></li>
+            <li>AI outputs are <strong>not reviewed, verified, or endorsed</strong> by the site owner</li>
+            <li>AI-generated content should not be relied upon as factual or authoritative</li>
+          </ul>
+          <p className="mt-2">You are responsible for evaluating any AI-generated suggestions before using them.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">4. No Guarantees or Warranties</h2>
+          <p>The Service is provided <strong>"as is" and "as available."</strong> To the maximum extent permitted by law, no warranties are provided, including implied warranties of Merchantability, Fitness for a particular purpose, Accuracy or reliability, Availability or uptime. The Service may change, degrade, or be discontinued at any time.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">5. Limitation of Liability</h2>
+          <p>To the fullest extent permitted by law, the site owner shall not be liable for any damages arising from your use of the Service, including but not limited to: Data loss, Service interruptions, Decisions made using AI-generated content, Inaccurate or missing information.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">6. Acceptable Use</h2>
+          <p>You agree to use the Service in good faith. You may not: Abuse or attempt to exploit AI prompt functionality, Use automated tools to generate excessive requests, Interfere with or disrupt the Service, Use the Service for unlawful or malicious purposes. Access may be restricted or terminated for misuse.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">7. Data Persistence</h2>
+          <p>The Service does not guarantee long-term storage or availability of user-entered data. Data may be modified or deleted as part of normal operation or maintenance.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">8. Changes</h2>
+          <p>These Terms may be updated at any time. Continued use of the Service after changes constitutes acceptance of the updated Terms.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">9. Contact</h2>
+          <p>Questions about these Terms can be sent to: <strong>[your contact email]</strong></p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function PrivacyPage() {
+  return (
+    <div className="p-4 md:p-8 lg:p-12 max-w-4xl mx-auto w-full bg-white rounded-2xl shadow-sm border border-stone-100 my-8">
+      <h1 className="text-3xl font-bold text-stone-900 mb-6">Privacy Policy</h1>
+      <div className="prose prose-stone max-w-none text-stone-600 space-y-6">
+        <p><strong>Last updated:</strong> {format(new Date(), 'MMMM d, yyyy')}</p>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">1. Overview</h2>
+          <p>This Privacy Policy explains how information is collected and used when you use the Service. The Service is designed for personal goal tracking and <strong>does not sell personal data</strong>.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">2. Information You Provide</h2>
+          <p>You may voluntarily provide information such as: Goals, objectives, and progress updates; Text prompts used for AI goal generation. This content is user-generated and entered at your discretion.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">3. How Information Is Used</h2>
+          <p>Information may be used in aggregate to: Operate and maintain the Service, Understand usage patterns and feature adoption, Improve functionality and performance. Data is not used to identify individual users.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">4. Analytics & Infrastructure</h2>
+          <p>The Service relies on third-party infrastructure and analytics providers, including: Google Analytics, Vercel, Supabase. These services may collect technical data such as IP address, device type, browser information, and usage events. Their use of data is governed by their respective privacy policies.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">5. Data Sharing</h2>
+          <p>User data is not sold or shared with third parties except: As necessary to operate the Service using the providers listed above; When required by law.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">6. Data Security</h2>
+          <p>Reasonable safeguards are used to protect data. However, no system can be guaranteed to be fully secure.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">7. Data Retention</h2>
+          <p>Data may be retained as long as necessary for operation or improvement of the Service. Long-term data retention is not guaranteed.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">8. Children's Privacy</h2>
+          <p>The Service is not intended for use by individuals under the age of 13. No intentional collection of children's data occurs.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">9. Changes</h2>
+          <p>This Privacy Policy may be updated periodically. Continued use of the Service indicates acceptance of the updated policy.</p>
+        </section>
+
+        <section>
+          <h2 className="text-xl font-bold text-stone-800 mb-2">10. Contact</h2>
+          <p>For privacy-related questions, contact: <strong>[your contact email]</strong></p>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Footer({ onViewChange }: { onViewChange: (view: ViewMode) => void }) {
+  return (
+    <footer className="w-full py-6 mt-auto border-t border-stone-200 text-center text-xs text-stone-400">
+      <div className="mb-2">
+        &copy; {new Date().getFullYear()} AimAchieve. &middot;{' '}
+        <button onClick={() => onViewChange('terms')} className="hover:text-stone-600 hover:underline">Terms</button> &middot;{' '}
+        <button onClick={() => onViewChange('privacy')} className="hover:text-stone-600 hover:underline">Privacy</button>
+      </div>
+      <div>
+        Provided "as is." AI-generated content is informational only.
+      </div>
+    </footer>
   );
 }
