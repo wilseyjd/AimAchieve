@@ -22,7 +22,12 @@ import {
   Calendar,
   LayoutList,
   LayoutGrid,
-  Filter
+  Filter,
+  ExternalLink,
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
 import { format, startOfWeek, addDays, startOfMonth, endOfMonth, endOfWeek, isSameMonth, isSameDay, isToday, parseISO, addMonths, subMonths, getDay, isWithinInterval, isBefore, startOfToday, subDays, eachDayOfInterval, eachWeekOfInterval, subWeeks } from 'date-fns';
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, LineChart, Line, CartesianGrid } from 'recharts';
@@ -30,7 +35,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 // Imports from local files
 import { AppState, ViewMode, CalendarViewMode, Objective, KeyResult, Action, ActionLog, User, UserPreferences, Frequency } from './types';
 import { MOCK_INITIAL_DATA, COLORS, WEEKDAYS } from './constants';
-import { loadState, saveState, generateId } from './services/storageService';
+import { loadState, saveState, generateId, findUserByEmail, logoutUser, authenticateUser, registerUser, changePassword } from './services/storageService';
 import { generateOKRFromGoal } from './services/geminiService';
 import { Button } from './components/ui/Button';
 import { Modal } from './components/ui/Modal';
@@ -91,19 +96,13 @@ function generateICalData(state: AppState) {
   const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
 
   state.actions.forEach(action => {
-    // Note: We might want to include archived actions in export if user needs history,
-    // but typically a calendar view implies 'active' schedule. 
-    // For now, let's keep all unless explicitly filtered, matching the data availability requirement.
-    // However, if we strictly follow "mark as Inactive so it doesn't show in calendar views", 
-    // we should probably exclude it here too, or just let the app view handle it.
-    // Let's filter here to match the "don't show in calendar views" requirement.
     const kr = state.keyResults.find(k => k.id === action.keyResultId);
     if ((kr?.status || 'active') === 'archived') return;
 
     const obj = state.objectives.find(o => o.id === kr?.objectiveId);
     
     let rrule = '';
-    let dtstart = today;
+    let dtstart = action.startDate ? action.startDate.replace(/-/g, '') : today;
 
     // Construct Summary
     const summary = `🎯 ${action.title}`;
@@ -152,9 +151,12 @@ export default function App() {
     typeof window !== 'undefined' ? window.innerWidth >= 768 : true
   );
 
-  // Login State
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginStep, setLoginStep] = useState<'input' | 'sent'>('input');
+  // Auth State
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Load data on mount
   useEffect(() => {
@@ -169,51 +171,41 @@ export default function App() {
     }
   }, [state]);
 
-  const handleSendMagicLink = (e: React.FormEvent) => {
+  const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loginEmail || !loginEmail.includes('@')) {
-      // In a real app, use a proper validation library or UI feedback
-      return; 
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      if (authMode === 'login') {
+        const user = await authenticateUser(authForm.email, authForm.password);
+        localStorage.setItem('orbit_current_user_id', user.id);
+        const data = loadState();
+        setState(data);
+      } else {
+        // Basic Validation
+        if (!authForm.name) throw new Error("Name is required");
+        if (authForm.password.length < 6) throw new Error("Password must be at least 6 characters");
+        
+        const user = await registerUser(authForm.name, authForm.email, authForm.password);
+        localStorage.setItem('orbit_current_user_id', user.id);
+        const data = loadState();
+        setState(data);
+      }
+      // Reset Form
+      setAuthForm({ name: '', email: '', password: '' });
+    } catch (err: any) {
+      setAuthError(err.message || "Authentication failed");
+    } finally {
+      setAuthLoading(false);
     }
-    // Simulate API call to send email
-    setLoginStep('sent');
-  };
-
-  const handleCompleteLogin = () => {
-    // Simulate clicking the link in the email
-    const nameFromEmail = loginEmail.split('@')[0];
-    const formattedName = nameFromEmail.charAt(0).toUpperCase() + nameFromEmail.slice(1);
-    
-    // Default preferences
-    const defaultPrefs: UserPreferences = {
-      dailyDigest: true,
-      weeklyReport: true,
-      actionReminders: true,
-      reminderTime: "09:00",
-      defaultCalendarView: 'week'
-    };
-
-    setState(prev => ({ 
-      ...prev, 
-      user: { 
-        id: generateId(), 
-        name: formattedName, 
-        email: loginEmail,
-        preferences: defaultPrefs
-      } 
-    }));
-    setCurrentView('dashboard');
-    
-    // Reset login state after transition
-    setTimeout(() => {
-      setLoginStep('input');
-      setLoginEmail('');
-    }, 500);
   };
 
   const handleLogout = () => {
-    setState(prev => ({ ...prev, user: null }));
-    localStorage.removeItem('orbit_okr_data_v1');
+    logoutUser();
+    setState({ ...MOCK_INITIAL_DATA, user: null });
+    setAuthForm({ name: '', email: '', password: '' });
+    setAuthError(null);
   };
 
   const toggleAction = (actionId: string, date: string, currentStatus: boolean) => {
@@ -251,71 +243,114 @@ export default function App() {
           </div>
           <h2 className="text-center text-3xl font-bold tracking-tight text-stone-900">AimAchieve</h2>
           <p className="mt-2 text-center text-sm text-stone-500">
-            {loginStep === 'input' ? 'Password-less secure login.' : 'Check your inbox.'}
+            {authMode === 'login' ? 'Sign in to continue tracking.' : 'Create your secure account.'}
           </p>
         </div>
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-10 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl border border-stone-100 relative">
             
-            {loginStep === 'input' ? (
-              <form className="space-y-6" onSubmit={handleSendMagicLink}>
+            <form className="space-y-6" onSubmit={handleAuthSubmit}>
+              {authError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-600 px-4 py-3 rounded-lg text-sm flex items-center">
+                  <AlertCircle className="w-4 h-4 mr-2 flex-shrink-0" />
+                  {authError}
+                </div>
+              )}
+
+              {authMode === 'signup' && (
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-stone-700">Email address</label>
+                  <label htmlFor="name" className="block text-sm font-medium text-stone-700">Full Name</label>
                   <div className="mt-1 relative rounded-md shadow-sm">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Mail className="h-5 w-5 text-stone-400" aria-hidden="true" />
+                      <UserIcon className="h-5 w-5 text-stone-400" aria-hidden="true" />
                     </div>
                     <input 
-                      id="email" 
-                      name="email" 
-                      type="email" 
-                      required 
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
+                      id="name" 
+                      name="name" 
+                      type="text" 
+                      required={authMode === 'signup'}
+                      value={authForm.name}
+                      onChange={(e) => setAuthForm({...authForm, name: e.target.value})}
                       className="appearance-none block w-full pl-10 pr-3 py-2 border border-stone-200 rounded-lg shadow-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-stone-500 sm:text-sm" 
-                      placeholder="you@example.com"
+                      placeholder="Jane Doe"
                     />
                   </div>
                 </div>
-                <div>
-                   <Button type="submit" className="w-full">Send Magic Link</Button>
+              )}
+
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-stone-700">Email address</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-5 w-5 text-stone-400" aria-hidden="true" />
+                  </div>
+                  <input 
+                    id="email" 
+                    name="email" 
+                    type="email" 
+                    autoComplete="email"
+                    required 
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({...authForm, email: e.target.value})}
+                    className="appearance-none block w-full pl-10 pr-3 py-2 border border-stone-200 rounded-lg shadow-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-stone-500 sm:text-sm" 
+                    placeholder="you@example.com"
+                  />
                 </div>
-                <p className="text-xs text-center text-stone-400">
-                  We'll send a secure link to sign in instantly.
-                </p>
-              </form>
-            ) : (
-              <div className="text-center space-y-6">
-                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-stone-100">
-                  <Mail className="h-6 w-6 text-stone-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-stone-600">
-                    We sent a login link to <span className="font-bold text-stone-900">{loginEmail}</span>.
-                  </p>
-                  <p className="text-xs text-stone-400 mt-2">
-                    Click the link in the email to sign in.
-                  </p>
-                </div>
-                
-                {/* Simulation Button */}
-                <div className="pt-6 border-t border-stone-100">
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium text-stone-700">Password</label>
+                <div className="mt-1 relative rounded-md shadow-sm">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Lock className="h-5 w-5 text-stone-400" aria-hidden="true" />
+                  </div>
+                  <input 
+                    id="password" 
+                    name="password" 
+                    type={showPassword ? "text" : "password"} 
+                    autoComplete={authMode === 'login' ? "current-password" : "new-password"}
+                    required 
+                    minLength={6}
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({...authForm, password: e.target.value})}
+                    className="appearance-none block w-full pl-10 pr-10 py-2 border border-stone-200 rounded-lg shadow-sm placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-stone-500 focus:border-stone-500 sm:text-sm" 
+                    placeholder="••••••••"
+                  />
                   <button 
-                    onClick={handleCompleteLogin}
-                    className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center cursor-pointer text-stone-400 hover:text-stone-600"
                   >
-                    Simulate: Open Link from Email
-                  </button>
-                  <button 
-                    onClick={() => setLoginStep('input')}
-                    className="mt-4 text-xs text-stone-400 hover:text-stone-600 hover:underline"
-                  >
-                    Use a different email
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
-            )}
+
+              <div>
+                 <Button type="submit" className="w-full" isLoading={authLoading}>
+                   {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                 </Button>
+              </div>
+            </form>
+
+            <div className="mt-6 border-t border-stone-100 pt-6">
+              <div className="text-center text-sm">
+                 <span className="text-stone-500">
+                   {authMode === 'login' ? "Don't have an account? " : "Already have an account? "}
+                 </span>
+                 <button 
+                   onClick={() => {
+                     setAuthMode(authMode === 'login' ? 'signup' : 'login');
+                     setAuthError(null);
+                     setAuthForm({ name: '', email: '', password: '' });
+                   }}
+                   className="font-medium text-stone-900 hover:text-stone-700"
+                 >
+                   {authMode === 'login' ? 'Sign up' : 'Log in'}
+                 </button>
+              </div>
+            </div>
             
           </div>
         </div>
@@ -416,6 +451,9 @@ function Dashboard({ state, onToggleAction, onViewChange }: { state: AppState, o
     // Check if parent KeyResult is archived
     const parentKR = state.keyResults.find(kr => kr.id === action.keyResultId);
     if ((parentKR?.status || 'active') === 'archived') return false;
+
+    // Check start date (Actions shouldn't appear before they start)
+    if (action.startDate && today < action.startDate) return false;
 
     if (action.frequency === 'daily') return true;
     if (action.frequency === 'weekly') {
@@ -552,7 +590,7 @@ function Dashboard({ state, onToggleAction, onViewChange }: { state: AppState, o
 
 function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>> }) {
   // Modal State
-  const [modalType, setModalType] = useState<'create-goal' | 'ai-preview' | 'add-kr' | 'add-action' | 'edit-kr' | 'edit-action' | 'edit-goal' | null>(null);
+  const [modalType, setModalType] = useState<'create-goal' | 'ai-preview' | 'add-kr' | 'add-action' | 'edit-kr' | 'edit-action' | 'edit-goal' | 'update-progress' | null>(null);
   
   // Selection State
   const [selectedObjectiveId, setSelectedObjectiveId] = useState<string | null>(null);
@@ -609,7 +647,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       weeklyType: 'specific_days', // Default
       daysOfWeek: [], 
       timesPerWeek: 3, 
-      targetDate: '' 
+      targetDate: '',
+      startDate: format(new Date(), 'yyyy-MM-dd') // Default to today
     });
     setModalType('add-action');
   };
@@ -622,9 +661,16 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       weeklyType: action.weeklyType || (action.daysOfWeek ? 'specific_days' : 'times_per_week'),
       daysOfWeek: action.daysOfWeek || [], 
       timesPerWeek: action.timesPerWeek || 3,
-      targetDate: action.targetDate || '' 
+      targetDate: action.targetDate || '',
+      startDate: action.startDate || action.createdDate
     });
     setModalType('edit-action');
+  };
+
+  const openUpdateProgress = (kr: KeyResult) => {
+    setEditingItem(kr);
+    setFormData({ currentValue: kr.currentValue });
+    setModalType('update-progress');
   };
 
   // --- Handlers for saving data ---
@@ -691,6 +737,20 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
     closeModals();
   };
 
+  const handleSaveProgress = () => {
+    const val = parseFloat(formData.currentValue);
+    if (editingItem && !isNaN(val)) {
+        setState(prev => ({
+            ...prev,
+            keyResults: prev.keyResults.map(kr => kr.id === editingItem.id ? {
+                ...kr,
+                currentValue: val
+            } : kr)
+        }));
+    }
+    closeModals();
+  };
+
   const handleSaveAction = () => {
     if (!formData.title) return;
     
@@ -700,7 +760,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
       weeklyType: formData.frequency === 'weekly' ? formData.weeklyType : undefined,
       daysOfWeek: (formData.frequency === 'weekly' && formData.weeklyType === 'specific_days') ? formData.daysOfWeek : undefined,
       timesPerWeek: (formData.frequency === 'weekly' && formData.weeklyType === 'times_per_week') ? Number(formData.timesPerWeek) : undefined,
-      targetDate: formData.frequency === 'one-off' ? formData.targetDate : undefined
+      targetDate: formData.frequency === 'one-off' ? formData.targetDate : undefined,
+      startDate: formData.startDate || format(new Date(), 'yyyy-MM-dd')
     });
 
     if (modalType === 'edit-action' && editingItem) {
@@ -795,6 +856,7 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
 
     const newKRs: KeyResult[] = [];
     const newActions: Action[] = [];
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
 
     previewData.keyResults.forEach((krData: any) => {
       const krId = generateId();
@@ -818,7 +880,8 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
           weeklyType: actData.daysOfWeek ? 'specific_days' : 'times_per_week',
           timesPerWeek: 3, // Default AI to 3 if generic weekly
           daysOfWeek: actData.daysOfWeek,
-          createdDate: format(new Date(), 'yyyy-MM-dd')
+          createdDate: todayStr,
+          startDate: todayStr
         });
       });
     });
@@ -862,6 +925,7 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
             onEditAction={openEditAction}
             onDeleteAction={handleDeleteAction}
             onToggleKRStatus={handleToggleKRStatus}
+            onUpdateProgress={openUpdateProgress}
           />
         ))}
       </div>
@@ -1042,6 +1106,20 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
              </select>
           </div>
           
+          {/* Start Date Configuration - Available for all frequencies except one-off (which has targetDate) */}
+          {formData.frequency !== 'one-off' && (
+             <div>
+                <label className="block text-sm font-medium text-stone-700 mb-1">Start Date</label>
+                <input 
+                  type="date" 
+                  value={formData.startDate || ''}
+                  onChange={(e) => setFormData({...formData, startDate: e.target.value})}
+                  className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border"
+                />
+                <p className="text-xs text-stone-400 mt-1">Action will appear in schedule from this date.</p>
+             </div>
+          )}
+
           {formData.frequency === 'weekly' && (
             <div className="space-y-4 bg-stone-50 p-4 rounded-lg border border-stone-100">
                <div className="flex flex-col sm:flex-row gap-4">
@@ -1164,12 +1242,44 @@ function GoalsPage({ state, setState }: { state: AppState, setState: React.Dispa
              </div>
           </div>
       </Modal>
+
+      {/* 5. Update Progress Modal */}
+      <Modal 
+         isOpen={modalType === 'update-progress'} 
+         onClose={closeModals}
+         title="Update Progress"
+      >
+        <div className="space-y-6">
+          <p className="text-sm text-stone-600">
+            Update the current value for <span className="font-bold text-stone-900">{editingItem?.title}</span>.
+          </p>
+          <div>
+              <label className="block text-sm font-medium text-stone-700 mb-1">Current Value</label>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="number" 
+                  value={formData.currentValue}
+                  onChange={(e) => setFormData({...formData, currentValue: e.target.value})}
+                  className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border text-lg font-medium"
+                  autoFocus
+                />
+                <span className="text-stone-400 font-medium">{editingItem?.unit}</span>
+              </div>
+              <div className="mt-2 text-xs text-stone-400">
+                Target: {editingItem?.targetValue} {editingItem?.unit}
+              </div>
+          </div>
+          <Button onClick={handleSaveProgress} className="w-full">
+            Save Progress
+          </Button>
+        </div>
+      </Modal>
+
     </div>
   );
 }
 
 function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleAction: any }) {
-  // Use default from preferences or fallback to 'week'
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [viewMode, setViewMode] = useState<'month' | 'week'>(state.user?.preferences?.defaultCalendarView || 'week');
@@ -1235,18 +1345,17 @@ function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleActi
         const isPast = isBefore(day, startOfToday());
         
         // Find actions to display on this calendar day
-        // Filter out actions from archived key results
         const dayActions = state.actions.filter(a => {
            const kr = state.keyResults.find(k => k.id === a.keyResultId);
            if ((kr?.status || 'active') === 'archived') return false;
+
+           // Filter by start date
+           if (a.startDate && dayStr < a.startDate) return false;
 
            if (a.frequency === 'daily') return true;
            if (a.frequency === 'weekly') {
              if (a.weeklyType === 'specific_days') return a.daysOfWeek?.includes(getDay(cloneDay));
              if (a.weeklyType === 'times_per_week') {
-                // Only show floating tasks if they were completed on this day to avoid clutter/confusion
-                // for historical views, or show generic slot?
-                // Let's stick to "Completed only" for calendar history of floating tasks.
                 return state.logs.some(l => l.actionId === a.id && l.date === dayStr && l.completed);
              }
              return a.daysOfWeek?.includes(getDay(cloneDay));
@@ -1255,12 +1364,11 @@ function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleActi
            return false;
         });
 
-        // Determine Planned (Y) vs Completed (X) for Past Days
-        // Logic: Floating tasks don't count towards Planned Y unless we want to flag "missed" floating tasks 
-        // which is hard on a specific day basis. We will count only Fixed Schedule tasks for Y.
         const fixedScheduleActions = state.actions.filter(a => {
             const kr = state.keyResults.find(k => k.id === a.keyResultId);
             if ((kr?.status || 'active') === 'archived') return false;
+
+            if (a.startDate && dayStr < a.startDate) return false;
 
             if (a.frequency === 'daily') return true;
             if (a.frequency === 'weekly' && (a.weeklyType === 'specific_days' || !a.weeklyType)) {
@@ -1272,11 +1380,7 @@ function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleActi
 
         const completedCount = dayActions.filter(a => state.logs.find(l => l.actionId === a.id && l.date === dayStr && l.completed)).length;
         const totalFixedPlanned = fixedScheduleActions.length;
-        
-        // Note: completedCount might be higher than totalFixedPlanned if user completed floating tasks.
-        // We will display X/Y where Y is fixed planned. If X < Y, user missed fixed tasks.
-        
-        const totalCount = dayActions.length; // Used for dots rendering
+        const totalCount = dayActions.length; 
 
         days.push(
           <div
@@ -1366,12 +1470,11 @@ function CalendarPage({ state, onToggleAction }: { state: AppState, onToggleActi
                 const kr = state.keyResults.find(k => k.id === a.keyResultId);
                 if ((kr?.status || 'active') === 'archived') return false;
 
+                if (a.startDate && dayStr < a.startDate) return false;
+
                 if (a.frequency === 'daily') return true;
                 if (a.frequency === 'weekly') {
                   if (a.weeklyType === 'specific_days') return a.daysOfWeek?.includes(getDay(selectedDay));
-                  // For 'times_per_week', usually we show if completed OR if it's "Today" so users can do it.
-                  // For past days in modal, maybe only show if done? 
-                  // Let's show it always in the modal for flexibility to backfill logs.
                   if (a.weeklyType === 'times_per_week') return true; 
                   return a.daysOfWeek?.includes(getDay(selectedDay));
                 }
@@ -1475,6 +1578,8 @@ function AnalyticsPage({ state }: { state: AppState }) {
       // without overcounting. We count only Fixed Schedule items for the denominator.
       
       const scheduledFixed = filteredActions.filter(a => {
+        if (a.startDate && dayStr < a.startDate) return false;
+
         if (a.frequency === 'daily') return true;
         if (a.frequency === 'weekly' && a.weeklyType === 'specific_days') return a.daysOfWeek?.includes(dayOfWeek);
         if (a.frequency === 'one-off') return a.targetDate === dayStr;
@@ -1532,6 +1637,8 @@ function AnalyticsPage({ state }: { state: AppState }) {
 
         // Denominator: Fixed Schedule Actions
         const plannedActions = filteredActions.filter(a => {
+          if (a.startDate && dayStr < a.startDate) return false;
+
           if (a.frequency === 'daily') return true;
           if (a.frequency === 'weekly' && (a.weeklyType === 'specific_days' || !a.weeklyType)) {
              return a.daysOfWeek?.includes(dayOfWeek);
@@ -1570,6 +1677,12 @@ function AnalyticsPage({ state }: { state: AppState }) {
         let denominator = 0;
         
         filteredActions.forEach(a => {
+           // Skip if start date is after this week
+           if (a.startDate && a.startDate > format(weekEnd, 'yyyy-MM-dd')) return;
+           
+           // NOTE: Ideally we check if the start date falls within this week and prorate, 
+           // but for simplicity we count full week if it started before end of week.
+
            if (a.frequency === 'daily') denominator += 7;
            else if (a.frequency === 'weekly') {
              if (a.weeklyType === 'times_per_week') denominator += (a.timesPerWeek || 3);
@@ -1812,7 +1925,31 @@ function AnalyticsPage({ state }: { state: AppState }) {
 
 function ProfilePage({ state, setState }: { state: AppState, setState: React.Dispatch<React.SetStateAction<AppState>> }) {
   const user = state.user;
+  
+  // Name State
+  const [name, setName] = useState(user?.name || '');
+  const [isNameDirty, setIsNameDirty] = useState(false);
+  
+  // Password State
+  const [passwordForm, setPasswordForm] = useState({ current: '', new: '', confirm: '' });
+  const [passwordStatus, setPasswordStatus] = useState<{type: 'success'|'error', msg: string} | null>(null);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // Sync name if user changes (e.g. re-login)
+  useEffect(() => {
+    if (user) setName(user.name);
+  }, [user]);
+
   if (!user) return null;
+
+  const handleUpdateName = () => {
+    if (!name.trim()) return;
+    setState(prev => ({
+      ...prev,
+      user: { ...prev.user!, name: name.trim() }
+    }));
+    setIsNameDirty(false);
+  };
 
   const handleUpdatePreferences = (key: keyof UserPreferences, value: any) => {
     setState(prev => {
@@ -1836,6 +1973,31 @@ function ProfilePage({ state, setState }: { state: AppState, setState: React.Dis
             }
         };
     });
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordStatus(null);
+    
+    if (passwordForm.new !== passwordForm.confirm) {
+      setPasswordStatus({ type: 'error', msg: "New passwords do not match" });
+      return;
+    }
+    if (passwordForm.new.length < 6) {
+      setPasswordStatus({ type: 'error', msg: "Password must be at least 6 characters" });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await changePassword(user.id, passwordForm.current, passwordForm.new);
+      setPasswordStatus({ type: 'success', msg: "Password updated successfully" });
+      setPasswordForm({ current: '', new: '', confirm: '' });
+    } catch (err: any) {
+      setPasswordStatus({ type: 'error', msg: err.message || "Failed to update password" });
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleDownloadICal = () => {
@@ -1872,16 +2034,92 @@ function ProfilePage({ state, setState }: { state: AppState, setState: React.Dis
 
         <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 overflow-hidden mb-8">
             <div className="p-6 md:p-8 border-b border-stone-100">
-                <div className="flex items-center space-x-4">
-                    <div className="h-16 w-16 rounded-full bg-stone-100 flex items-center justify-center text-2xl font-bold text-stone-600">
-                        {user.name.charAt(0)}
-                    </div>
-                    <div>
-                        <h2 className="text-xl font-bold text-stone-900">{user.name}</h2>
-                        <p className="text-stone-500">{user.email}</p>
-                    </div>
-                </div>
+               <h3 className="text-lg font-bold text-stone-900 mb-4">Personal Information</h3>
+               <div className="flex flex-col md:flex-row gap-6 items-start">
+                  <div className="h-20 w-20 rounded-full bg-stone-100 flex items-center justify-center text-3xl font-bold text-stone-600 shrink-0">
+                      {user.name.charAt(0)}
+                  </div>
+                  <div className="flex-1 w-full space-y-4">
+                      <div>
+                         <label className="block text-sm font-medium text-stone-700 mb-1">Full Name</label>
+                         <div className="flex gap-2">
+                           <input 
+                             type="text" 
+                             value={name}
+                             onChange={(e) => { setName(e.target.value); setIsNameDirty(true); }}
+                             className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border"
+                           />
+                           {isNameDirty && (
+                              <Button onClick={handleUpdateName} size="sm">Save</Button>
+                           )}
+                         </div>
+                      </div>
+                      <div>
+                         <label className="block text-sm font-medium text-stone-700 mb-1">Email Address</label>
+                         <input 
+                           type="email" 
+                           value={user.email}
+                           disabled
+                           className="block w-full rounded-lg border-stone-200 bg-stone-50 text-stone-500 shadow-sm p-2.5 border cursor-not-allowed"
+                         />
+                         <p className="text-xs text-stone-400 mt-1">Email cannot be changed.</p>
+                      </div>
+                  </div>
+               </div>
             </div>
+
+            {/* Security Section (New) */}
+            <div className="p-6 md:p-8 bg-stone-50/50 border-b border-stone-100">
+               <h3 className="text-sm font-bold text-stone-900 uppercase tracking-wider mb-4 flex items-center">
+                  <Shield className="w-4 h-4 mr-2" /> Security
+               </h3>
+               
+               <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+                  {passwordStatus && (
+                     <div className={`p-3 rounded-lg text-sm ${passwordStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                        {passwordStatus.msg}
+                     </div>
+                  )}
+                  <div>
+                     <label className="block text-sm font-medium text-stone-700 mb-1">Current Password</label>
+                     <input 
+                       type="password" 
+                       value={passwordForm.current}
+                       onChange={e => setPasswordForm({...passwordForm, current: e.target.value})}
+                       className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border bg-white"
+                       required
+                     />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                     <div>
+                       <label className="block text-sm font-medium text-stone-700 mb-1">New Password</label>
+                       <input 
+                         type="password" 
+                         value={passwordForm.new}
+                         onChange={e => setPasswordForm({...passwordForm, new: e.target.value})}
+                         className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border bg-white"
+                         required
+                         minLength={6}
+                       />
+                     </div>
+                     <div>
+                       <label className="block text-sm font-medium text-stone-700 mb-1">Confirm New</label>
+                       <input 
+                         type="password" 
+                         value={passwordForm.confirm}
+                         onChange={e => setPasswordForm({...passwordForm, confirm: e.target.value})}
+                         className="block w-full rounded-lg border-stone-200 shadow-sm focus:border-stone-900 focus:ring-stone-900 p-2.5 border bg-white"
+                         required
+                         minLength={6}
+                       />
+                     </div>
+                  </div>
+                  <Button type="submit" variant="secondary" size="sm" isLoading={isChangingPassword} disabled={!passwordForm.current || !passwordForm.new}>
+                     Update Password
+                  </Button>
+               </form>
+            </div>
+
             <div className="p-6 md:p-8 bg-stone-50/50">
                  <h3 className="text-sm font-bold text-stone-900 uppercase tracking-wider mb-4">Application Preferences</h3>
                  <div className="space-y-4">

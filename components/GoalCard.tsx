@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Objective, KeyResult, Action } from '../types';
-import { Target, Plus, ArrowRight, Pencil, Trash2, Archive, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Target, Plus, ArrowRight, Pencil, Trash2, Archive, RotateCcw, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import { Button } from './ui/Button';
 import { ActionItem } from './ActionItem'; // Reuse ActionItem for consistency
 import { format, parseISO } from 'date-fns';
@@ -18,6 +18,7 @@ interface GoalCardProps {
   onEditAction: (action: Action) => void;
   onDeleteAction: (id: string) => void;
   onToggleKRStatus: (id: string, newStatus: 'active' | 'archived') => void;
+  onUpdateProgress: (kr: KeyResult) => void;
 }
 
 export const GoalCard: React.FC<GoalCardProps> = ({
@@ -32,7 +33,8 @@ export const GoalCard: React.FC<GoalCardProps> = ({
   onDeleteKeyResult,
   onEditAction,
   onDeleteAction,
-  onToggleKRStatus
+  onToggleKRStatus,
+  onUpdateProgress
 }) => {
   const [showArchived, setShowArchived] = useState(false);
 
@@ -54,8 +56,8 @@ export const GoalCard: React.FC<GoalCardProps> = ({
 
     return (
       <div key={kr.id} className={`group/kr relative ${isArchived ? 'opacity-60 grayscale' : ''}`}>
-        <div className="flex justify-between items-end mb-2">
-          <div className="flex-1 mr-4">
+        <div className="flex justify-between items-start mb-2">
+          <div className="flex-1 mr-4 pt-1">
             <div className="flex items-center justify-between mb-1">
               <div className="flex flex-col">
                 <span className="text-sm font-semibold text-stone-800 break-words">{kr.title}</span>
@@ -97,8 +99,19 @@ export const GoalCard: React.FC<GoalCardProps> = ({
               ></div>
             </div>
           </div>
-          <div className="text-xs font-mono text-stone-500 whitespace-nowrap">
-            {kr.currentValue} / {kr.targetValue} <span className="text-stone-400">{kr.unit}</span>
+          
+          <div className="flex flex-col items-end">
+            <div className="text-xs font-mono text-stone-500 whitespace-nowrap">
+              {kr.currentValue} / {kr.targetValue} <span className="text-stone-400">{kr.unit}</span>
+            </div>
+            {!isArchived && (
+              <button 
+                onClick={() => onUpdateProgress(kr)}
+                className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium mt-1 flex items-center transition-colors"
+              >
+                <TrendingUp className="w-3 h-3 mr-1" /> Update Progress
+              </button>
+            )}
           </div>
         </div>
 

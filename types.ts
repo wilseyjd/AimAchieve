@@ -20,6 +20,7 @@ export interface Action {
   timesPerWeek?: number; // used if weeklyType is 'times_per_week'
   // One-off
   targetDate?: string; 
+  startDate?: string; // When this action schedule becomes effective
   createdDate: string;
 }
 
@@ -55,6 +56,9 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  // Security fields (Optional to support legacy/mock data if needed, but enforced in new logic)
+  passwordHash?: string; 
+  salt?: string;
   preferences?: UserPreferences;
 }
 
