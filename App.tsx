@@ -46,42 +46,11 @@ import { GoalCard } from './components/GoalCard';
 
 // Custom Logo Component
 const AimAchieveLogo = ({ className = "w-8 h-8", inverted = false }: { className?: string, inverted?: boolean }) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
+  <img
+    src="/assets/images/aim_achieve_logo.png"
+    alt="AimAchieve Logo"
     className={className}
-  >
-    {/* Rocket - Filled */}
-    <path
-      d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"
-      fill={inverted ? "currentColor" : "#1c1917"}
-    />
-    <path
-      d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"
-      fill={inverted ? "currentColor" : "#1c1917"}
-    />
-    <path
-      d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"
-      fill={inverted ? "currentColor" : "#1c1917"}
-    />
-    <path
-      d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"
-      fill={inverted ? "currentColor" : "#1c1917"}
-    />
-
-    {/* Checkmark Background to clear lines behind it */}
-    <circle cx="17" cy="17" r="5" fill={inverted ? "#1c1917" : "white"} />
-
-    {/* Checkmark */}
-    <path
-      d="M14 17L16 19L20 15"
-      stroke="#10b981"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+  />
 );
 
 // Helper to generate iCal data
@@ -567,8 +536,8 @@ export default function App() {
       >
         <div className="h-20 flex items-center px-6 border-b border-stone-800">
           <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setIsSidebarOpen(!isSidebarOpen)}>
-            <div className="bg-white/10 p-2 rounded-lg group-hover:bg-white/20 transition-colors text-white">
-              <AimAchieveLogo className="w-5 h-5" inverted />
+            <div className="bg-white/10 rounded-lg group-hover:bg-white/20 transition-colors text-white">
+              <AimAchieveLogo className="w-8 h-8" inverted />
             </div>
             {isSidebarOpen && <span className="font-bold text-lg text-stone-100 tracking-tight">AimAchieve</span>}
           </div>
