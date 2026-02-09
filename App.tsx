@@ -47,7 +47,7 @@ import { GoalCard } from './components/GoalCard';
 // Custom Logo Component
 const AimAchieveLogo = ({ className = "w-8 h-8", inverted = false }: { className?: string, inverted?: boolean }) => (
   <img
-    src="/public/assets/images/aim_achieve_logo.png"
+    src="/assets/images/aim_achieve_logo.png"
     alt="AimAchieve Logo"
     className={className}
   />
